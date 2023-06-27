@@ -73,9 +73,9 @@ GIT_INFO = check_git_info()
 
 
 def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictionary
-    save_dir, epochs, batch_size, weights, single_cls, evolve, data, cfg, resume, noval, nosave, workers, freeze = \
+    save_dir, epochs, batch_size, weights, single_cls, evolve, data, cfg, resume, noval, nosave, workers, freeze, freeze_alter = \
         Path(opt.save_dir), opt.epochs, opt.batch_size, opt.weights, opt.single_cls, opt.evolve, opt.data, opt.cfg, \
-        opt.resume, opt.noval, opt.nosave, opt.workers, opt.freeze
+        opt.resume, opt.noval, opt.nosave, opt.workers, opt.freeze, opt.freeze_alter
     callbacks.run('on_pretrain_routine_start')
 
     # Directories
@@ -138,13 +138,18 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
     amp = check_amp(model)  # check AMP
 
     # Freeze
-    freeze = [f'model.{x}.' for x in (freeze if len(freeze) > 1 else range(freeze[0]))]  # layers to freeze
-    for k, v in model.named_parameters():
-        v.requires_grad = True  # train all layers
-        # v.register_hook(lambda x: torch.nan_to_num(x))  # NaN to 0 (commented for erratic training results)
-        if any(x in k for x in freeze):
-            LOGGER.info(f'freezing {k}')
-            v.requires_grad = False
+    freeze = [10]  # freeze backbone 0-9
+    freeze_backbone = [f'model.{x}.' for x in (freeze if len(freeze) > 1 else range(freeze[0]))]  # layers to freeze
+    freeze = list(range(10, 25))  # freeze head 10-24
+    freeze_head = [f'model.{x}.' for x in (freeze if len(freeze) > 1 else range(freeze[0]))]  # layers to freeze
+
+    def freeze_layer(__freeze, name=''):
+        for k, v in model.named_parameters():
+            v.requires_grad = True  # train all layers
+            # v.register_hook(lambda x: torch.nan_to_num(x))  # NaN to 0 (commented for erratic training results)
+            if any(x in k for x in freeze):
+                v.requires_grad = False
+        LOGGER.info(f'freezing {name}')
 
     # Image size
     gs = max(int(model.stride.max()), 32)  # grid size (max stride)
@@ -268,6 +273,25 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
                 f'Starting training for {epochs} epochs...')
     for epoch in range(start_epoch, epochs):  # epoch ------------------------------------------------------------------
         callbacks.run('on_train_epoch_start')
+        # implement freeze logits
+        # 三个阶段训练，一阶段使用50%数据训练，训练全部层
+        # 二阶段使用50%训练数据，交替冻结head和backbone
+        # 三阶段使用全部数据，交替冻结head和backbone
+        if freeze_alter:
+            if epoch < 100:
+                dataset.indices = random.choices(range(dataset.n), k=int(dataset.n / 2))
+            elif epoch >= 100:
+                if epoch <= epochs - 5 - 1:
+                    dataset.indices = random.choices(range(dataset.n), k=int(dataset.n / 2))
+                else:
+                    dataset.indices = range(dataset.n)
+                diff_epoch = (epoch - 100) % 5
+                if diff_epoch == 0:
+                    freeze_layer(freeze_head, 'head')
+                else:
+                    freeze_layer(freeze_backbone, 'backbone')
+
+
         model.train()
 
         # Update image weights (optional, single-GPU only)
@@ -472,6 +496,8 @@ def parse_opt(known=False):
     parser.add_argument('--label-smoothing', type=float, default=0.0, help='Label smoothing epsilon')
     parser.add_argument('--patience', type=int, default=100, help='EarlyStopping patience (epochs without improvement)')
     parser.add_argument('--freeze', nargs='+', type=int, default=[0], help='Freeze layers: backbone=10, first3=0 1 2')
+    parser.add_argument('--freeze-alter', action='store_true', help='Alter freeze head and backbone base epoch')
+
     parser.add_argument('--save-period', type=int, default=-1, help='Save checkpoint every x epochs (disabled if < 1)')
     parser.add_argument('--seed', type=int, default=0, help='Global training seed')
     parser.add_argument('--local_rank', type=int, default=-1, help='Automatic DDP Multi-GPU argument, do not modify')

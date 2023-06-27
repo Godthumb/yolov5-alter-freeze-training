@@ -14,4 +14,9 @@
 冻结模块的特点就是将backbone和head轮流冻结，每epoch只更新未冻结部分的参数。我们以5个epoch为一个阶段，第一个epoch为head冻结，只训练backbone；第2~5个epoch为backbone冻结，只训练head。这样轮流更新backbone和head的参数
 
 ## 实现方法
-实现方法很简单，修改train.py和dataloader.py即可
+实现方法很简单，修改train.py和utils/dataloaders.py即可。
+- train.py修改140行和276行以及499行，具体参考修改后代码
+- dataloaders.py修改647行
+
+## 训练方法
+训练方法同yolov5, 增加参数freeze-alter, 打开该参数则可实现上述策略， 默认前100个epoch执行策略步骤1。

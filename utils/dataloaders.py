@@ -643,7 +643,8 @@ class LoadImagesAndLabels(Dataset):
         return x
 
     def __len__(self):
-        return len(self.im_files)
+        # return len(self.im_files)
+        return len(self.indices)
 
     # def __iter__(self):
     #     self.count = -1
