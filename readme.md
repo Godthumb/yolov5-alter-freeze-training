@@ -19,4 +19,4 @@
 - dataloaders.py修改647行
 
 ## 训练方法
-训练方法同yolov5, 增加参数freeze-alter, 打开该参数则可实现上述策略， 默认前100个epoch执行策略步骤1。
+训练方法同yolov5, 增加参数freeze-alter, 打开该参数则可实现上述策略， 默认前100个epoch执行策略步骤1
